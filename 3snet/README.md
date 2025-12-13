@@ -41,9 +41,14 @@
    pytest -v -s
 ```
 
+[Список реализованных тестов](events_calendar_tests.md)
+
 #### Результат работы тестов
 <img src="images/3snet_tests.png" alt="Результаты работы тестов" width="600">
 
 #### Полученные ошибки
 <img src="images/3snet_failures.png" alt="Ошибки при тестировании" width="600">
 
+
+## Список тестов
+[Список реализованных тестов](events_calendar_tests.md)
