@@ -4,7 +4,9 @@
 
 import random
 import pytest
+import html
 
+from html.parser import HTMLParser
 from playwright.sync_api import Page, expect
 from urllib.parse import quote
 from urllib.parse import urljoin
@@ -13,6 +15,8 @@ from urllib.parse import urljoin
 page_URL = "https://dev.3snet.info/eventswidget/"
 
 # Локаторы
+header_nav_links_path = '//nav[@class="header-nav"]/ul[@class="nav-menu"]//a'
+
 listbox_theme_path = '//div[@class="checkselect" and @data-select="Выбрать тематику"]'
 theme_template = '//label[@class="custom-checkbox" and input[@name="type"] and span[text()="{THEME}"]]'
 
@@ -22,9 +26,11 @@ country_template = '//label[@class="custom-checkbox" and input[@name="country"] 
 calendar_width_path = 'input[name="width"]'
 calendar_height_path = 'input[name="height"]'
 
-header_nav_links_path = '//nav[@class="header-nav"]/ul[@class="nav-menu"]//a'
-
 button_generate_preview = 'button:text("Сгенерировать превью")'
+
+textarea_code_path = 'textarea[id="code"]'
+button_code_copy_path = '//button[@id="code-copy-button"]'
+
 
 WIDTH_LOWER_LIMIT = 230
 WIDTH_UPPER_LIMIT = 1020
@@ -47,6 +53,24 @@ lst_themes = [
 ]
 
 lst_countries = ['Выбрать все']
+
+#region вспомогательные функции
+
+class AdhocParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.src = None
+        self.width = None
+        self.height = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'iframe':
+            attrs_dict = dict(attrs)
+            self.src = attrs_dict.get('src')
+            self.width = attrs_dict.get('width')
+            self.height = attrs_dict.get('height')
+
+#endregion
 
 
 def get_theme_choices(k=3):
@@ -210,6 +234,40 @@ def test_calendar_list_select_all_valid(page: Page):
     check_iframe_source_valid(page.context, iframe)
 
 
+def test_textarea_content(page: Page):
+    """
+    Тестирует сгенерированный фрагмент html в тектсовом поле textarea id="code"  
+    Параметры:  
+        - Выбор тематики: рандомно  
+        - Выбор страны: рандомно  
+        - Ширина: рандомно  
+        - Высота: рандомно  
+    """
+
+    page.goto(page_URL, timeout=PAGE_TIMEOUT)
+
+    select_themes(page, count=2)
+    select_countries(page, count=2)
+    width = select_calendar_width(page)
+    height = select_calendar_height(page)
+
+    area_html = page.query_selector(textarea_code_path).input_value() # type: ignore
+    assert 'iframe' in area_html, 'Не найден тег iframe'
+
+    parser = AdhocParser()
+    parser.feed(area_html)
+
+    assert width == int(parser.width if parser.width else 0)
+    assert height == int(parser.height if parser.height else 0)
+    assert parser.src, 'Не найден атрибут src'
+
+    test_page = page.context.new_page()
+    response = test_page.goto(parser.src, timeout=PAGE_TIMEOUT, wait_until='domcontentloaded')
+    assert response, f'Не удалось загрузить страницу {parser.src}'
+    assert response.status < 400, f'Ошибка HTTP {response.status} при загрузке страницы {parser.src}'
+
+
+
 def insert_value_and_compare(widget, check_value, expected_value):
     """
     Вставляет значение в указанное поле и сравнивает с ожидаемым значением    
@@ -219,7 +277,6 @@ def insert_value_and_compare(widget, check_value, expected_value):
     widget.page.wait_for_timeout(200)
     x = widget.input_value()
     assert expected_value == int(x if x else 0)
-
 
 @pytest.mark.parametrize(
     "value, expected_value",
@@ -374,10 +431,15 @@ def test_header_navigation_links(page: Page):
         pytest.fail(text)
 
 
+html_fragment = '<iframe id="3snet-frame" src="https://3snet.info/widget-active-events/?theme=turquoise&amp;event_group=10622&amp;event_type=10958,10960,10959&amp;event_country=on" width="922" height="598" frameborder="0"></iframe>'
+
+
 
 
 if __name__ == "__main__":
 
     # --browser=firefox
-    pytest.main([__file__, "--headed", "-v", "-s"])
+    test = '' # '::test_textarea_content'
+    test_file = f'{__file__}{test}'
+    pytest.main([test_file, "--headed", "-v", "-s"])
 
